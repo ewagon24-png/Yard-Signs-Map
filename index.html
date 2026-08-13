@@ -249,6 +249,12 @@
   }
   #toast.show{opacity:1;}
 
+  #debug-line{
+    position:absolute;bottom:4px;right:8px;z-index:1000;
+    font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:rgba(241,231,204,0.55);
+    background:rgba(0,0,0,0.35);padding:2px 8px;border-radius:4px;pointer-events:none;
+  }
+
   ::-webkit-scrollbar{width:8px;}
   ::-webkit-scrollbar-thumb{background:var(--parchment-deep);border-radius:4px;}
 </style>
@@ -301,6 +307,7 @@
   </div>
 </div>
 <div id="toast"></div>
+<div id="debug-line">not loaded yet</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
 <script>
@@ -406,25 +413,34 @@ async function ensureBucket(){
   return bucketId;
 }
 
+function setDebugLine(msg){
+  const el = document.getElementById('debug-line');
+  if (el) el.textContent = msg;
+}
+
 async function loadPins(){
   try {
     if (hasClaudeStorage){
       const result = await window.storage.get(STORAGE_KEY, true);
       lastRaw = result && result.value ? result.value : '[]';
+      setDebugLine('load: claude storage OK');
     } else {
       await ensureBucket();
       if (bucketId){
         const res = await fetch('https://kvdb.io/' + bucketId + '/signs');
         lastRaw = res.ok ? (await res.text()) : '[]';
         if (!lastRaw) lastRaw = '[]';
+        setDebugLine('load: kvdb ' + res.status + ' \u00b7 bucket ' + bucketId.slice(0, 8) + '\u2026');
       } else {
         lastRaw = localStorage.getItem('yard_signs_local') || '[]';
+        setDebugLine('load: local only, no bucket');
       }
     }
     pins = JSON.parse(lastRaw);
   } catch (e) {
     pins = [];
     lastRaw = '[]';
+    setDebugLine('load: error \u2014 ' + e.message);
   }
   pins.forEach(addMarkerForPin);
   renderLog();
@@ -435,6 +451,7 @@ async function savePins(){
   try {
     if (hasClaudeStorage){
       await window.storage.set(STORAGE_KEY, raw, true);
+      setDebugLine('save: claude storage OK \u00b7 ' + pins.length + ' signs');
     } else if (bucketId){
       const res = await fetch('https://kvdb.io/' + bucketId + '/signs', {
         method: 'POST',
@@ -443,14 +460,18 @@ async function savePins(){
       });
       if (!res.ok){
         showToast('Save failed (server said ' + res.status + ') \u2014 not saved');
+        setDebugLine('save: kvdb FAILED ' + res.status + ' \u00b7 bucket ' + bucketId.slice(0, 8) + '\u2026');
         return;
       }
+      setDebugLine('save: kvdb 200 OK \u00b7 ' + pins.length + ' signs \u00b7 bucket ' + bucketId.slice(0, 8) + '\u2026');
     } else {
       localStorage.setItem('yard_signs_local', raw);
+      setDebugLine('save: local only, no bucket');
     }
     lastRaw = raw;
   } catch (e) {
     showToast('Could not save signs right now \u2014 check your connection');
+    setDebugLine('save: network error \u2014 ' + e.message);
   }
 }
 
@@ -912,7 +933,7 @@ async function runBulkImport(){
     await savePins();
     showToast(added + ' signs imported');
   } else {
-    showToast('Import already up to date, nothing new added');
+    setDebugLine('import: already up to date \u00b7 ' + pins.length + ' signs');
   }
   btn.disabled = false;
   btn.textContent = 'Import saved list';
@@ -923,7 +944,7 @@ if (!hasClaudeStorage){
   document.getElementById('import-btn').style.display = 'inline-block';
 }
 
-loadPins();
+loadPins().then(runBulkImport);
 </script>
 </body>
 </html>
