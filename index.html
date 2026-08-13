@@ -69,6 +69,13 @@
     cursor:pointer;
   }
   #copy-link-btn:hover{background:var(--brass-light);}
+  #import-btn{
+    display:none;flex-shrink:0;
+    background:var(--marsh);color:var(--parchment);border:none;border-radius:6px;
+    padding:8px 12px;font-size:12.5px;font-weight:600;font-family:'Inter',sans-serif;
+    cursor:pointer;
+  }
+  #import-btn:hover{opacity:0.9;}
 
   #body{display:flex;flex:1;min-height:0;}
   #map{flex:1;min-width:0;position:relative;}
@@ -264,6 +271,7 @@
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>
       Copy link
     </button>
+    <button id="import-btn" style="display:none;" aria-label="Import saved sign list">Import saved list</button>
   </header>
   <div id="body">
     <div id="map">
@@ -428,17 +436,21 @@ async function savePins(){
     if (hasClaudeStorage){
       await window.storage.set(STORAGE_KEY, raw, true);
     } else if (bucketId){
-      await fetch('https://kvdb.io/' + bucketId + '/signs', {
+      const res = await fetch('https://kvdb.io/' + bucketId + '/signs', {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain' },
         body: raw
       });
+      if (!res.ok){
+        showToast('Save failed (server said ' + res.status + ') \u2014 not saved');
+        return;
+      }
     } else {
       localStorage.setItem('yard_signs_local', raw);
     }
     lastRaw = raw;
   } catch (e) {
-    showToast('Could not save signs right now');
+    showToast('Could not save signs right now \u2014 check your connection');
   }
 }
 
@@ -881,9 +893,10 @@ const BULK_IMPORT_COORDS = [
   {lat:39.0805,lng:-76.2190},{lat:39.5051,lng:-75.8427}
 ];
 
-async function maybeRunBulkImport(){
-  const params = new URLSearchParams(window.location.search);
-  if (params.get('import') !== '1') return;
+async function runBulkImport(){
+  const btn = document.getElementById('import-btn');
+  btn.disabled = true;
+  btn.textContent = 'Importing\u2026';
   let added = 0;
   BULK_IMPORT_COORDS.forEach(c => {
     const exists = pins.some(p => Math.abs(p.lat - c.lat) < 0.0003 && Math.abs(p.lng - c.lng) < 0.0003);
@@ -901,9 +914,16 @@ async function maybeRunBulkImport(){
   } else {
     showToast('Import already up to date, nothing new added');
   }
+  btn.disabled = false;
+  btn.textContent = 'Import saved list';
 }
 
-loadPins().then(maybeRunBulkImport);
+document.getElementById('import-btn').addEventListener('click', runBulkImport);
+if (!hasClaudeStorage){
+  document.getElementById('import-btn').style.display = 'inline-block';
+}
+
+loadPins();
 </script>
 </body>
 </html>
