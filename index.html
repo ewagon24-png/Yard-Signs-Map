@@ -489,13 +489,25 @@ function addMarkerForPin(pin){
   markers[pin.id] = marker;
 }
 
+async function removePin(pin){
+  pins = pins.filter(p => p.id !== pin.id);
+  if (markers[pin.id]){ map.removeLayer(markers[pin.id]); delete markers[pin.id]; }
+  renderLog();
+  map.closePopup();
+  await savePins();
+  showToast('Sign removed');
+}
+
 function openViewPopup(pin){
   const div = document.createElement('div');
   div.style.minWidth = '180px';
   div.innerHTML = '<div style="font-family:Spectral,serif;font-weight:600;font-size:14px;color:#1C3B4D;">' +
     escapeHtml(pin.name) + '</div>' +
     (pin.note ? '<div style="font-size:12.5px;color:#5B5344;margin-top:4px;line-height:1.4;">' + escapeHtml(pin.note) + '</div>' : '') +
-    '<div style="font-family:IBM Plex Mono,monospace;font-size:10.5px;color:#52694F;margin-top:6px;">' + fmtCoord(pin.lat, pin.lng) + '</div>';
+    '<div style="font-family:IBM Plex Mono,monospace;font-size:10.5px;color:#52694F;margin-top:6px;">' + fmtCoord(pin.lat, pin.lng) + '</div>' +
+    '<button type="button" style="margin-top:9px;width:100%;background:#A8452F;color:#F1E7CC;border:none;border-radius:4px;padding:7px;font-size:12.5px;font-weight:600;cursor:pointer;">Delete sign</button>';
+  const delBtn = div.querySelector('button');
+  delBtn.addEventListener('click', () => removePin(pin));
   L.popup().setLatLng([pin.lat, pin.lng]).setContent(div).openOn(map);
 }
 
@@ -647,11 +659,7 @@ function renderLog(){
     });
     el.querySelector('.entry-del').addEventListener('click', async (ev) => {
       ev.stopPropagation();
-      pins = pins.filter(p => p.id !== pin.id);
-      if (markers[pin.id]){ map.removeLayer(markers[pin.id]); delete markers[pin.id]; }
-      renderLog();
-      await savePins();
-      showToast('Sign removed');
+      await removePin(pin);
     });
     list.appendChild(el);
   });
@@ -846,7 +854,56 @@ document.getElementById('copy-link-btn').addEventListener('click', () => {
 });
 document.getElementById('copy-link-btn').style.display = 'inline-flex';
 
-loadPins();
+const BULK_IMPORT_COORDS = [
+  {lat:39.0247,lng:-76.0506},{lat:39.0565,lng:-76.0151},{lat:38.9217,lng:-76.1931},
+  {lat:38.9089,lng:-76.1824},{lat:38.9684,lng:-76.3251},{lat:39.4301,lng:-75.8802},
+  {lat:39.2607,lng:-75.8501},{lat:39.1229,lng:-75.9788},{lat:38.9815,lng:-76.3145},
+  {lat:39.1580,lng:-76.2064},{lat:38.9810,lng:-76.2747},{lat:39.1580,lng:-76.2064},
+  {lat:39.1273,lng:-75.9738},{lat:39.1289,lng:-75.9733},{lat:39.1859,lng:-76.0874},
+  {lat:38.9560,lng:-76.2040},{lat:39.1239,lng:-75.9776},{lat:39.0266,lng:-76.0511},
+  {lat:39.2144,lng:-76.0335},{lat:39.2419,lng:-75.8015},{lat:39.1864,lng:-75.8618},
+  {lat:38.9964,lng:-76.3103},{lat:39.1290,lng:-75.9735},{lat:39.1285,lng:-75.9726},
+  {lat:39.1457,lng:-76.0915},{lat:39.2393,lng:-75.9230},{lat:39.2384,lng:-75.9858},
+  {lat:39.1240,lng:-75.9821},{lat:39.1947,lng:-75.8086},{lat:39.5713,lng:-75.8154},
+  {lat:38.9588,lng:-76.2053},{lat:38.9712,lng:-76.3259},{lat:38.9670,lng:-76.3254},
+  {lat:38.9703,lng:-76.2158},{lat:38.9668,lng:-76.3270},{lat:39.1504,lng:-76.2134},
+  {lat:39.1510,lng:-76.2114},{lat:38.9659,lng:-76.3113},{lat:38.3825,lng:-75.2496},
+  {lat:39.0226,lng:-76.0674},{lat:38.9898,lng:-76.3073},{lat:39.0184,lng:-76.3124},
+  {lat:38.9361,lng:-76.2669},{lat:39.0795,lng:-75.8973},{lat:39.2730,lng:-76.0900},
+  {lat:38.9578,lng:-76.2082},{lat:39.0280,lng:-76.0502},{lat:39.0568,lng:-76.1255},
+  {lat:39.0570,lng:-76.0154},{lat:39.5528,lng:-75.9488},{lat:39.1535,lng:-75.9865},
+  {lat:38.9034,lng:-76.2017},{lat:38.3391,lng:-75.4138},{lat:38.4164,lng:-75.2866},
+  {lat:38.0584,lng:-75.4623},{lat:38.0465,lng:-75.5351},{lat:38.0087,lng:-75.5296},
+  {lat:38.0260,lng:-75.5791},{lat:38.9185,lng:-76.3021},{lat:38.8956,lng:-76.1778},
+  {lat:38.8924,lng:-76.1861},{lat:39.0595,lng:-76.0480},{lat:39.3070,lng:-76.0549},
+  {lat:39.2815,lng:-76.0460},{lat:39.2740,lng:-76.0261},{lat:39.2829,lng:-75.9746},
+  {lat:39.3279,lng:-75.9073},{lat:39.2946,lng:-75.8386},{lat:39.0945,lng:-76.2231},
+  {lat:39.0805,lng:-76.2190},{lat:39.5051,lng:-75.8427}
+];
+
+async function maybeRunBulkImport(){
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('import') !== '1') return;
+  let added = 0;
+  BULK_IMPORT_COORDS.forEach(c => {
+    const exists = pins.some(p => Math.abs(p.lat - c.lat) < 0.0003 && Math.abs(p.lng - c.lng) < 0.0003);
+    if (!exists){
+      const pin = { id: newPinId(), name: 'Yard sign', note: '', lat: c.lat, lng: c.lng, ts: Date.now() };
+      pins.push(pin);
+      addMarkerForPin(pin);
+      added++;
+    }
+  });
+  if (added > 0){
+    renderLog();
+    await savePins();
+    showToast(added + ' signs imported');
+  } else {
+    showToast('Import already up to date, nothing new added');
+  }
+}
+
+loadPins().then(maybeRunBulkImport);
 </script>
 </body>
 </html>
